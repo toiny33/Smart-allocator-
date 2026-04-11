@@ -3,8 +3,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from models import Need, Resource, OptimizationRequest, OptimizationResponse, Allocation
-from optimizer import AllocationOptimizer
-from ai_module import assign_urgency
+from optimize import AllocationOptimizer
+#from ai_module import assign_urgency
 
 # 1. SECURITY & CONFIGURATION
 # Load secret keys from your local .env file (invisible to GitHub)
