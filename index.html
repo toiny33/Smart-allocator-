@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReliefLink AI Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 350px; width: 100%; border-radius: 15px; z-index: 1; transition: all 0.3s; }
+        .tab-active { background: #6366f1 !important; color: white !important; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4); }
+        .map-error { border: 5px solid #ef4444 !important; box-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+        .status-pill { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+
+    <div class="max-w-5xl mx-auto py-6 px-4">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-3xl font-black text-slate-900 tracking-tight">RELIEF<span class="text-indigo-600">LINK</span></h1>
+                <p class="text-slate-500 text-sm font-bold uppercase tracking-wider italic">Universal Resource Optimizer</p>
+            </div>
+            <div id="connection-status" class="bg-green-100 text-green-700 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
+                <span class="h-2 w-2 bg-green-500 rounded-full animate-pulse"></span> System Live
+            </div>
+        </div>
+
+        <div class="flex bg-white rounded-2xl shadow-sm mb-6 border border-slate-200 p-1">
+            <button onclick="switchTab('request')" id="tab-req-btn" class="flex-1 py-4 rounded-xl font-bold transition tab-active">🆘 VICTIM PORTAL</button>
+            <button onclick="switchTab('ngo')" id="tab-ngo-btn" class="flex-1 py-4 rounded-xl font-bold text-slate-400 hover:bg-slate-50 transition">🏢 NGO DASHBOARD</button>
+        </div>
+
+        <div class="bg-white p-5 rounded-3xl shadow-xl border border-slate-200 mb-8">
+            <div class="flex flex-col md:flex-row gap-3 mb-4">
+                <div class="relative flex-1">
+                    <input id="addr-input" type="text" placeholder="Search location..." 
+                           class="w-full pl-10 pr-4 py-4 rounded-2xl border border-slate-200 outline-none font-medium">
+                    <span class="absolute left-4 top-5">📍</span>
+                </div>
+                <button onclick="searchAddress()" class="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold hover:bg-black transition">Find</button>
+                <button onclick="askCurrentLocation()" class="bg-indigo-600 text-white px-6 py-4 rounded-2xl font-bold hover:bg-indigo-700">🎯 My GPS</button>
+            </div>
+            <div id="map"></div>
+            <p id="loc-indicator" class="text-[10px] text-red-500 font-black mt-2 px-2 uppercase tracking-widest">⚠️ LOCATION NOT SET - Click Map or Use GPS</p>
+        </div>
+
+        <div id="section-request" class="space-y-6">
+            <div class="bg-white p-8 rounded-3xl shadow-sm border-t-8 border-red-500">
+                <h3 class="text-2xl font-black text-slate-800 mb-6">Post SOS Request</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <input id="req-name" type="text" placeholder="Your Name/Group" class="p-4 rounded-xl border font-bold">
+                    <input id="req-phone" type="text" placeholder="Contact Number" class="p-4 rounded-xl border font-bold">
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <input id="req-type" type="text" placeholder="Item (e.g. Boat)" class="p-4 rounded-xl border bg-slate-50 font-bold">
+                    <input id="req-qty" type="number" value="1" class="p-4 rounded-xl border font-bold">
+                </div>
+                <textarea id="req-desc" rows="3" class="w-full p-4 rounded-xl border mb-6" placeholder="Describe emergency..."></textarea>
+                <button onclick="saveRequest()" class="w-full bg-red-600 text-white py-5 rounded-2xl font-black text-xl shadow-lg hover:bg-red-700 transition">BROADCAST SOS</button>
+            </div>
+
+            <div class="bg-indigo-900 p-8 rounded-3xl text-white shadow-2xl">
+                <h3 class="text-xl font-black mb-4">My SOS Status</h3>
+                <div id="victim-status-list" class="space-y-4">
+                    <p class="text-indigo-300 italic text-sm">No active broadcasts.</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="section-ngo" class="hidden space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-8 rounded-3xl shadow-sm border-t-8 border-green-500">
+                    <h3 class="text-2xl font-black text-slate-800 mb-6">Stock Inventory</h3>
+                    <input id="ngo-name" type="text" placeholder="NGO Name" class="w-full p-4 rounded-xl border mb-4 font-bold">
+                    <input id="ngo-contact" type="text" placeholder="Contact Number" class="w-full p-4 rounded-xl border mb-4 font-bold">
+                    <div class="flex gap-2 mb-4">
+                        <input id="stock-type" type="text" placeholder="Item" class="w-2/3 p-4 rounded-xl border bg-slate-50 font-bold">
+                        <input id="stock-qty" type="number" placeholder="Qty" class="w-1/3 p-4 rounded-xl border font-bold">
+                    </div>
+                    <button onclick="saveStock()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition">Save Inventory</button>
+                </div>
+                <div class="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <h3 class="text-xs font-black text-slate-400 mb-4 uppercase">System Stock</h3>
+                    <div id="inventory-list" class="space-y-2 overflow-y-auto max-h-[300px]"></div>
+                </div>
+            </div>
+            
+            <button onclick="runOptimization()" class="w-full bg-indigo-600 text-white py-6 rounded-3xl font-black text-2xl shadow-xl hover:bg-indigo-700 transition">🚀 RUN AI ALLOCATION</button>
+            
+            <div id="results-container" class="hidden space-y-6">
+                <h2 class="text-2xl font-black text-slate-900">AI Dispatch Routes</h2>
+                <div id="results-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let curLat, curLon, map, marker;
+        let locationSet = false; 
+        let allNeeds = [], allResources = [];
+
+        function initMap() {
+            map = L.map('map').setView([12.9716, 77.5946], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            marker = L.marker([12.9716, 77.5946], {draggable: true}).addTo(map);
+            marker.on('dragend', () => confirmLocation(marker.getLatLng().lat, marker.getLatLng().lng));
+            map.on('click', (e) => {
+                marker.setLatLng(e.latlng);
+                confirmLocation(e.latlng.lat, e.latlng.lng);
+            });
+        }
+
+        function confirmLocation(lat, lon) {
+            curLat = lat; curLon = lon;
+            locationSet = true;
+            document.getElementById('map').classList.remove('map-error');
+            const indicator = document.getElementById('loc-indicator');
+            indicator.innerText = `✅ COORDINATES LOCKED: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            indicator.className = "text-[10px] text-green-600 font-black mt-2 px-2 uppercase tracking-widest";
+            updateAddressFromCoords(lat, lon);
+        }
+
+        async function updateAddressFromCoords(lat, lon) {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+                const data = await res.json();
+                if(data.display_name) document.getElementById('addr-input').value = data.display_name;
+            } catch(e) {}
+        }
+
+        async function searchAddress() {
+            const query = document.getElementById('addr-input').value;
+            if(!query) return;
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}`);
+            const data = await res.json();
+            if (data[0]) {
+                const lat = parseFloat(data[0].lat), lon = parseFloat(data[0].lon);
+                map.setView([lat, lon], 14);
+                marker.setLatLng([lat, lon]);
+                confirmLocation(lat, lon);
+            }
+        }
+
+        function askCurrentLocation() {
+            navigator.geolocation.getCurrentPosition((pos) => {
+                const lat = pos.coords.latitude, lon = pos.coords.longitude;
+                map.setView([lat, lon], 15);
+                marker.setLatLng([lat, lon]);
+                confirmLocation(lat, lon);
+            }, () => alert("Enable location."));
+        }
+
+        function switchTab(role) {
+            const isReq = role === 'request';
+            locationSet = false; // AS REQUESTED: Still resets to force pin
+            document.getElementById('loc-indicator').innerText = "⚠️ LOCATION NOT SET - Click Map or Use GPS";
+            document.getElementById('loc-indicator').className = "text-[10px] text-red-500 font-black mt-2 px-2 uppercase tracking-widest";
+            document.getElementById('section-request').classList.toggle('hidden', !isReq);
+            document.getElementById('section-ngo').classList.toggle('hidden', isReq);
+            document.getElementById('tab-req-btn').classList.toggle('tab-active', isReq);
+            document.getElementById('tab-ngo-btn').classList.toggle('tab-active', !isReq);
+            setTimeout(() => { map.invalidateSize(); }, 200);
+        }
+
+        function validate() {
+            if(!locationSet) {
+                document.getElementById('map').classList.add('map-error');
+                alert("🚨 PIN LOCATION FIRST!");
+                return false;
+            }
+            return true;
+        }
+
+        function cleanType(str) {
+            let s = str.trim().toLowerCase();
+            return (s.length > 3 && s.endsWith('s')) ? s.slice(0, -1) : s;
+        }
+
+        function saveRequest() {
+            if(!validate()) return;
+            const id = "REQ-" + Date.now();
+            allNeeds.push({ 
+                id: id,
+                victim_name: document.getElementById('req-name').value || "Anonymous",
+                victim_phone: document.getElementById('req-phone').value || "No Phone",
+                address: document.getElementById('addr-input').value || "Map Pin",
+                type: cleanType(document.getElementById('req-type').value), 
+                demand: parseInt(document.getElementById('req-qty').value), 
+                description: document.getElementById('req-desc').value || "Emergency", 
+                latitude: curLat, longitude: curLon, ui_status: "Searching...", assigned_ngo_phone: ""
+            });
+            updateVictimUI();
+            alert("SOS Logged!");
+        }
+
+        function saveStock() {
+            if(!validate()) return; // FIXED NGO LOCK
+            allResources.push({ 
+                ngo_name: document.getElementById('ngo-name').value || "Relief NGO",
+                contact: document.getElementById('ngo-contact').value || "999",
+                address: document.getElementById('addr-input').value || "Map Pin",
+                type: cleanType(document.getElementById('stock-type').value), 
+                quantity: parseInt(document.getElementById('stock-qty').value), 
+                latitude: curLat, longitude: curLon 
+            });
+            updateInventoryUI();
+            alert("Stock Added!");
+        }
+
+        function updateVictimUI() {
+            const list = document.getElementById('victim-status-list');
+            list.innerHTML = allNeeds.map(n => `
+                <div class="bg-white/10 p-5 rounded-2xl border border-white/20 shadow-inner">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="font-black text-lg uppercase">${n.demand}x ${n.type}</span>
+                        <span class="status-pill ${n.ui_status === 'Received' ? 'bg-green-500' : 'bg-amber-500'} text-white">${n.ui_status}</span>
+                    </div>
+                    <p class="text-[10px] text-indigo-300 truncate">📍 ${n.address}</p>
+                    ${n.ui_status === "Dispatched" ? `
+                        <p class="text-xs font-black text-green-400 mt-2">📞 NGO CALL: ${n.assigned_ngo_phone}</p>
+                        <button onclick="markReceived('${n.id}')" class="w-full mt-2 bg-green-500 text-white py-2 rounded-xl font-bold text-xs shadow-lg">CONFIRM RECEIVED ✅</button>
+                    ` : ''}
+                </div>`).join('');
+        }
+
+        function markReceived(id) {
+            const req = allNeeds.find(n => n.id === id);
+            if(req) { req.ui_status = "Received"; updateVictimUI(); }
+        }
+
+        function updateInventoryUI() {
+            document.getElementById('inventory-list').innerHTML = allResources.map(r => `
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-center mb-2">
+                    <div class="text-xs">
+                        <p class="font-bold text-slate-800">${r.ngo_name}</p>
+                        <p class="text-slate-400 truncate w-32">${r.address}</p>
+                    </div>
+                    <span class="bg-green-100 text-green-700 px-2 py-1 rounded font-black text-[10px]">${r.quantity} ${r.type.toUpperCase()}</span>
+                </div>`).join('');
+        }
+
+        async function runOptimization() {
+            if(allResources.length === 0 || allNeeds.length === 0) return alert("Missing data!");
+            try {
+                const response = await fetch("http://127.0.0.1:8000/optimize", { 
+                    method: "POST", headers: {"Content-Type": "application/json"}, 
+                    body: JSON.stringify({ resources: allResources, needs: allNeeds }) 
+                });
+                const data = await response.json();
+                const grid = document.getElementById('results-grid');
+                document.getElementById('results-container').classList.remove('hidden');
+                
+                grid.innerHTML = data.plan.map((item, idx) => {
+                    const victim = allNeeds.find(v => cleanType(v.type) === cleanType(item.resource_type));
+                    return `
+                    <div class="bg-white p-6 rounded-3xl shadow-xl border-l-8 border-indigo-600 relative">
+                        <h4 class="text-3xl font-black text-indigo-700">${item.quantity_allocated}x ${item.resource_type.toUpperCase()}</h4>
+                        <div class="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-sm">
+                            <p><strong>Victim:</strong> ${item.victim_destination}</p>
+                            <p class="text-red-600 font-bold"><strong>📞 Contact:</strong> ${victim ? victim.victim_phone : 'N/A'}</p>
+                        </div>
+                        <div class="mt-4 flex items-center justify-between">
+                             <span class="text-xs font-bold text-slate-400">⚡ ${item.distance_km} km</span>
+                             <button onclick="dispatchResource(this, '${victim ? victim.id : ''}', '${item.ngo_source}', '${item.resource_type}', ${item.quantity_allocated}, '${item.ngo_contact}')" 
+                                     class="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs">CONFIRM DISPATCH 🚛</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch (e) { alert("Backend offline!"); }
+        }
+
+        function dispatchResource(btn, victimId, ngoName, type, qty, ngoPhone) {
+            btn.innerText = "DISPATCHED";
+            btn.disabled = true;
+            btn.className = "bg-green-600 text-white px-6 py-3 rounded-2xl font-black text-xs opacity-50";
+            
+            // 1. UPDATE VICTIM (Show NGO Phone)
+            if(victimId) {
+                const v = allNeeds.find(n => n.id === victimId);
+                if(v) { 
+                    v.ui_status = "Dispatched"; 
+                    v.assigned_ngo_phone = ngoPhone; // Save phone number to the request
+                    updateVictimUI(); 
+                }
+            }
+
+            // 2. UPGRADE INVENTORY (Subtract stock)
+            const resIndex = allResources.findIndex(r => r.ngo_name === ngoName && cleanType(r.type) === cleanType(type));
+            if(resIndex > -1) {
+                allResources[resIndex].quantity -= qty;
+                if(allResources[resIndex].quantity <= 0) allResources.splice(resIndex, 1);
+                updateInventoryUI(); // Refresh list
+            }
+        }
+
+        initMap();
+    </script>
+</body>
+</html>

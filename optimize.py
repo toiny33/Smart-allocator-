@@ -1,91 +1,79 @@
 import math
-from typing import List, Dict, Any
+from typing import List, Dict
 from ortools.linear_solver import pywraplp
+from difflib import SequenceMatcher # Built-in, no install needed
 
-
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371.0
-    lat1_rad, lon1_rad = math.radians(lat1), math.radians(lon1)
-    lat2_rad, lon2_rad = math.radians(lat2), math.radians(lon2)
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-    dlon = lon2_rad - lon1_rad
-    dlat = lat2_rad - lat1_rad
-
-    a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    
-    return R * c
-
+def is_similar(a, b):
+    # Standardize and check for exact/plural matches
+    a, b = a.lower().strip(), b.lower().strip()
+    if a == b or a == b + 's' or b == a + 's':
+        return True
+    # Fuzzy matching ratio (0.8 = 80% similar)
+    return SequenceMatcher(None, a, b).ratio() > 0.8
 
 class AllocationOptimizer:
-    def __init__(self, api_key=None):
-        self.api_key = api_key  # not used yet but future ready
-
     def solve_matching(self, resources: List[Dict], needs: List[Dict]):
-
-        if not resources or not needs:
-            return []
-
         solver = pywraplp.Solver.CreateSolver('SCIP')
-        if not solver:
-            return []
-
-        solver.SetTimeLimit(2000)
+        if not solver: return {"plan": [], "stats": {}}
 
         x = {}
-
-        # Decision variables
         for i, res in enumerate(resources):
             for j, need in enumerate(needs):
-                if res['type'] == need['type']:
-                    max_possible = min(res['quantity'], need['demand'])
-                    x[i, j] = solver.IntVar(0, max_possible, f'x_{i}_{j}')
+                # FUZZY MATCHING REPLACES EXACT MATCHING HERE
+                if is_similar(res['type'], need['type']):
+                    upper_bound = min(res['quantity'], need['demand'])
+                    x[i, j] = solver.IntVar(0, upper_bound, f'x_{i}_{j}')
 
-        # Constraints: resource limits
         for i, res in enumerate(resources):
-            constraint = solver.RowConstraint(0, res['quantity'], '')
-            for j in range(len(needs)):
-                if (i, j) in x:
-                    constraint.SetCoefficient(x[i, j], 1)
+            solver.Add(sum(x[i, j] for j in range(len(needs)) if (i, j) in x) <= res['quantity'])
 
-        # Constraints: demand limits
         for j, need in enumerate(needs):
-            constraint = solver.RowConstraint(0, need['demand'], '')
-            for i in range(len(resources)):
-                if (i, j) in x:
-                    constraint.SetCoefficient(x[i, j], 1)
+            solver.Add(sum(x[i, j] for i in range(len(resources)) if (i, j) in x) <= need['demand'])
 
-        # Objective
         objective = solver.Objective()
-
-        for i, res in enumerate(resources):
-            for j, need in enumerate(needs):
-                if (i, j) in x:
-                    distance = calculate_distance(
-                        res['latitude'], res['longitude'],
-                        need['latitude'], need['longitude']
-                    )
-                    urgency = need.get('urgency', 1)
-
-                    weight = (urgency * 1000) - distance
-                    objective.SetCoefficient(x[i, j], weight)
-
+        for (i, j), var in x.items():
+            dist = calculate_distance(
+                resources[i]['latitude'], resources[i]['longitude'], 
+                needs[j]['latitude'], needs[j]['longitude']
+            )
+            weight = (needs[j].get('urgency', 1) * 1000) - dist
+            objective.SetCoefficient(var, weight)
+        
         objective.SetMaximization()
-
         status = solver.Solve()
-
-        allocation_list = []
-
+        
+        plan = []
+        total_items = 0
         if status in [pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE]:
-            for i, res in enumerate(resources):
-                for j, need in enumerate(needs):
-                    if (i, j) in x and x[i, j].solution_value() > 0:
-                        allocation_list.append({
-                            "to": f"Need {j}",
-                            "quantity": int(x[i, j].solution_value())
-                        })
+            for (i, j), var in x.items():
+                qty = int(var.solution_value())
+                if qty > 0:
+                    d = calculate_distance(
+                        resources[i]['latitude'], resources[i]['longitude'], 
+                        needs[j]['latitude'], needs[j]['longitude']
+                    )
+                    plan.append({
+                        "resource_type": resources[i]['type'], # Keep NGO's naming
+                        "quantity_allocated": qty,
+                        "description": needs[j].get('description', 'Emergency Request'),
+                        "urgency_score": needs[j].get('urgency', 1),
+                        "distance_km": round(d, 2),
+                        "ngo_source": resources[i].get('ngo_name', 'Relief NGO'),
+                        "ngo_contact": resources[i].get('contact', 'Unknown'),
+                        "victim_destination": needs[j].get('address', 'Unknown Destination'),
+                        "status": "Pending Dispatch"
+                    })
+                    total_items += qty
 
-        return allocation_list
-    
-
-    
+        return {
+            "plan": plan,
+            "stats": {"total_items_allocated": total_items, "total_matches": len(plan)}
+        }

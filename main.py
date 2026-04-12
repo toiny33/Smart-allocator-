@@ -1,21 +1,23 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-from models import Need, Resource, OptimizationRequest, OptimizationResponse, Allocation
+import uvicorn
+
+try:
+    from ai_module import get_urgency_score 
+except ImportError:
+    # Fallback if ai_module isn't finished
+    def get_urgency_score(text): 
+        high_priority = ["life", "severe", "trapped", "bleeding", "insulin", "baby"]
+        if any(word in text.lower() for word in high_priority):
+            return 10
+        return 3
+
+from models import OptimizationRequest
 from optimize import AllocationOptimizer
-#from ai_module import assign_urgency
 
-# 1. SECURITY & CONFIGURATION
-# Load secret keys from your local .env file (invisible to GitHub)
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
-MAPS_API_KEY = os.getenv("MAPS_API_KEY")
+app = FastAPI(title="ReliefLink API")
 
-# Initialize the FastAPI app
-app = FastAPI(title="AI-Powered NGO Resource Allocation System")
-
-# Enable CORS for frontend communication
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,73 +26,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def home():
-    return {
-        "status": "Online",
-        "mission": "Optimal resource allocation for NGOs",
-        "version": "1.0"
-    }
-
-# 2. THE CORE API ENDPOINT
 @app.post("/optimize")
-def optimize_allocation(request: OptimizationRequest):
-    """
-    Main optimization endpoint:
-    1. Receive resources + needs
-    2. Call AI module → assign urgency to each need
-    3. Call optimizer → compute optimal allocation
-    4. Return allocation plan with impact summary
-    """
+async def optimize_endpoint(request: OptimizationRequest):
     try:
-        needs = request.needs
-        resources = request.resources
+        resources_data = [res.dict() for res in request.resources]
+        needs_data = [need.dict() for need in request.needs]
 
-        if not needs or not resources:
-            raise HTTPException(status_code=400, detail="Incomplete field data: needs and resources required")
+        for need in needs_data:
+            # Enhanced urgency scoring
+            need['urgency'] = get_urgency_score(need['description'])
 
-        # Step 1: Call AI module to assign urgency to each need
-        print(f"[LOG] Processing {len(needs)} needs for urgency assignment...")
-        for need in needs:
-            urgency = assign_urgency(need.description, GEMINI_API_KEY)
-            need.urgency = urgency
-            print(f"[LOG] Need '{need.name}': urgency = {urgency}")
+        engine = AllocationOptimizer()
+        result = engine.solve_matching(resources_data, needs_data)
+        return result
 
-        # Step 2: Call optimizer to compute allocation
-        print(f"[LOG] Running optimization engine with {len(resources)} resources...")
-        engine = AllocationOptimizer(api_key=MAPS_API_KEY)
-        allocation_list = engine.solve_matching(resources, needs)
-
-        # Step 3: Format response
-        allocations = [
-            Allocation(to=alloc["to"], quantity=alloc["quantity"]) 
-            for alloc in allocation_list
-        ]
-        
-        response = OptimizationResponse(allocations=allocations)
-
-        print(f"[LOG] Optimization complete. Generated {len(allocations)} allocations.")
-
-        return {
-            "success": True,
-            "impact_summary": f"Optimally allocated resources to {len(allocations)} areas based on urgency and distance",
-            "data": response.dict()
-        }
-
-    except HTTPException as e:
-        print(f"[ERROR] HTTP Exception: {e.detail}")
-        return {"success": False, "error": e.detail}
     except Exception as e:
-        print(f"[ERROR] Exception: {str(e)}")
-        return {"success": False, "error": str(e)}
+        print(f"CRITICAL ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail="Optimization failed on backend.")
 
-# 3. Health check endpoint
-@app.get("/health")
-def health_check():
-    return {
-        "status": "healthy",
-        "api_keys_configured": bool(GEMINI_API_KEY and MAPS_API_KEY)
-    }
-
-# 4. TECHNICAL WORKFLOW
-# Run via: uvicorn main:app --reload
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

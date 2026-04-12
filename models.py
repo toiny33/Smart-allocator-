@@ -1,73 +1,40 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional, List
 
-
-# -----------------------------
-# Resource Model
-# -----------------------------
 class Resource(BaseModel):
-    type: Literal["food", "medicine", "clothes"] = Field(
-        ..., description="Type of resource"
-    )
-    quantity: int = Field(
-        ..., gt=0, description="Available quantity of the resource"
-    )
-    latitude: float = Field(
-        ..., ge=-90, le=90, description="Latitude of the resource location"
-    )
-    longitude: float = Field(
-        ..., ge=-180, le=180, description="Longitude of the resource location"
-    )
+    ngo_name: str = Field("Relief NGO", description="Name of the supplying NGO")
+    contact: str = Field("Unknown", description="NGO Contact Number")
+    address: str = Field("Unknown Location", description="Address of the resources")
+    type: str = Field(..., description="Type of resource")
+    quantity: int = Field(..., gt=0)
+    latitude: float
+    longitude: float
 
-
-# -----------------------------
-# Need Model
-# -----------------------------
 class Need(BaseModel):
-    name: Optional[str] = Field(
-        None, description="Name of the area/location (e.g., Area A)"
-    )
-    type: Literal["food", "medicine", "clothes"] = Field(
-        ..., description="Type of need"
-    )
-    demand: int = Field(
-        ..., gt=0, description="Required quantity"
-    )
-    description: str = Field(
-        ..., min_length=5, description="Description of the situation"
-    )
-    latitude: float = Field(
-        ..., ge=-90, le=90, description="Latitude of the need location"
-    )
-    longitude: float = Field(
-        ..., ge=-180, le=180, description="Longitude of the need location"
-    )
-    urgency: Optional[int] = Field(
-        None,
-        ge=1,
-        le=5,
-        description="Urgency level (1–5), assigned by AI"
-    )
+    victim_name: str = Field("Anonymous", description="Name of the person in need")
+    address: str = Field("Unknown Location", description="Address of the victim")
+    type: str = Field(..., description="Type of need")
+    demand: int = Field(..., gt=0)
+    description: str = Field(..., min_length=1)
+    latitude: float
+    longitude: float
+    urgency: Optional[int] = 1
 
-
-# -----------------------------
-# Request Model (API input)
-# -----------------------------
 class OptimizationRequest(BaseModel):
-    resources: list[Resource]
-    needs: list[Need]
+    resources: List[Resource]
+    needs: List[Need]
 
+class AllocationPlan(BaseModel):
+    resource_type: str
+    quantity_allocated: int
+    description: str
+    urgency_score: int
+    distance_km: float
+    ngo_source: str
+    ngo_contact: str
+    victim_destination: str
+    status: str = "Pending Dispatch"
 
-# -----------------------------
-# Allocation Model (single result)
-# -----------------------------
-class Allocation(BaseModel):
-    to: str = Field(..., description="Destination area name")
-    quantity: int = Field(..., ge=0, description="Allocated quantity")
-
-
-# -----------------------------
-# Response Model (API output)
-# -----------------------------
 class OptimizationResponse(BaseModel):
-    allocations: list[Allocation]
+    plan: List[AllocationPlan]
+    stats: dict
